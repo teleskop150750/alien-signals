@@ -1,6 +1,6 @@
 export interface ReactiveNode {
 	/**
-	 * Linked list of dependencies - when they change, this node need to re-run.
+	 * Связанный список зависимостей - при их изменении этот узел должен перезапуститься.
 	 * ```ts
 	 * const data = signal(1);
 	 * const timesTwo = computed(() => data() * 2);
@@ -11,7 +11,7 @@ export interface ReactiveNode {
 	 */
 	deps?: Link;
 	depsTail?: Link;
-	/** Linked list of subscribers - when this node changes, notify them. */
+	/** Связанный список подписчиков - при изменении этого узла уведомить их. */
 	subs?: Link;
 	subsTail?: Link;
 	flags: ReactiveFlags;
@@ -34,31 +34,31 @@ interface Stack<T> {
 export const enum ReactiveFlags {
 	None = 0,
 	/**
-	 * When the ReactiveNode is used as a dependency, its value is mutable, so
-	 * propagate needs to set Pending/Dirty for it, and checkDirty needs to
-	 * trigger an update for it.
+	 * Когда ReactiveNode используется как зависимость, его значение является мутабельным,
+	 * поэтому propagate должен установить Pending/Dirty для него, а checkDirty должен
+	 * инициировать обновление для него.
 	 */
 	Mutable = 1 << 0,
-	/** A Watching node will have `notify(node)` called on it when its deps change. */
+	/** Наблюдаемый узел будет вызывать `notify(node)` при изменении его зависимостей. */
 	Watching = 1 << 1,
 	/**
-	 * RecursedCheck, Recursed: During the run of an effect/computed, if other
-	 * signal values ​​are changed, which indirectly or directly causes the
-	 * effect/computed to be set to Pending/Dirty during the run, it needs to be
-	 * recorded as Recursed to avoid failures. It aims to solve such edge cases:
+	 * RecursedCheck, Recursed: Во время выполнения effect/computed, если другие
+	 * значения сигналов изменяются, что косвенно или напрямую приводит к установке
+	 * effect/computed в состояние Pending/Dirty во время выполнения, это нужно
+	 * записать как Recursed для избежания сбоев. Цель - решить такие граничные случаи:
 	 * https://github.com/proposal-signals/signal-polyfill/pull/44/files#diff-11c8a943a1bcaf1e91e4bbcd27a589556340630ae5bb31f57884c8ef584b9fa5
 	 */
 	RecursedCheck = 1 << 2,
 	Recursed = 1 << 3,
-	/* A Dirty node is known to need to re-run. */
+	/* Грязный узел точно нуждается в перезапуске. */
 	Dirty = 1 << 4,
-	/** A Pending node may need to re-run. */
+	/** Ожидающий узел возможно нуждается в перезапуске. */
 	Pending = 1 << 5,
 }
 
 /**
- * Create a reactive system that propagates dirty notifications from
- * dependencies to subscribers.
+ * Создает реактивную систему, которая распространяет уведомления о загрязнении
+ * от зависимостей к подписчикам.
  */
 export function createReactiveSystem({
 	update,
@@ -66,20 +66,20 @@ export function createReactiveSystem({
 	unwatched,
 }: {
 	/**
-	 * A `sub`, which is used as a dependency, is dirty and needs to be re-run.
-	 * `update` should re-run it, and return `true` if `sub` changed -- meaning
-	 * the system should propagate dirty to `sub`'s subs.
+	 * `sub`, который используется как зависимость, загрязнен и нуждается в перезапуске.
+	 * `update` должен перезапустить его и вернуть `true`, если `sub` изменился -- это означает,
+	 * что система должна распространить загрязнение к подписчикам `sub`.
 	 */
 	update(sub: ReactiveNode): boolean;
 	/**
-	 * One of `sub`'s deps (including indirect ones) may have changed.
-	 * `notify(sub)` should schedule a check if `sub` is dirty, and if so, re-run it.
+	 * Одна из зависимостей `sub` (включая косвенные) могла измениться.
+	 * `notify(sub)` должен запланировать проверку загрязненности `sub`, и если так, перезапустить его.
 	 */
 	notify(sub: ReactiveNode): void;
 	/**
-	 * `sub` no longer has any subscribers.
-	 * `unwatched(sub)` should remove `sub` from its deps, and perform any cleanup
-	 * necessary, like freeing memory.
+	 * У `sub` больше нет подписчиков.
+	 * `unwatched(sub)` должен удалить `sub` из его зависимостей и выполнить необходимую очистку,
+	 * например, освобождение памяти.
 	 */
 	unwatched(sub: ReactiveNode): void;
 }) {
@@ -94,7 +94,7 @@ export function createReactiveSystem({
 	};
 
 	/**
-	 * Link a dependency to a subscriber.
+	 * Связывает зависимость с подписчиком.
 	 * 
 	 * ```ts
 	 * const data = signal(1);
@@ -154,9 +154,9 @@ export function createReactiveSystem({
 	}
 
 	/**
-	 * Remove a link.
-	 * Updates the dep list head/tail in `sub`.
-	 * @returns `link.nextDep`, the rest of the linked list.
+	 * Удаляет связь.
+	 * Обновляет начало/конец списка зависимостей в `sub`.
+	 * @returns `link.nextDep`, остаток связанного списка.
 	 */
 	function unlink(link: Link, sub = link.sub): Link | undefined {
 		const dep = link.dep;
@@ -188,15 +188,15 @@ export function createReactiveSystem({
 	}
 
 	/**
-	 * Notify all direct and indirect subscribers of a node that they
-	 * *may* be dirty (Pending) and should be checked.
+	 * Уведомляет всех прямых и косвенных подписчиков узла о том, что они
+	 * *могут* быть загрязнены (Pending) и должны быть проверены.
 	 */
 	function propagate(link: Link): void {
 		let next = link.nextSub;
 		let stack: Stack<Link | undefined> | undefined;
 
-		// This implementation avoids recursion by using an explicit stack.
-		// See README.md for the easier-to-understand recursive version.
+		// Эта реализация избегает рекурсии, используя явный стек.
+		// См. README.md для более понятной рекурсивной версии.
 		top: do {
 			const sub = link.sub;
 
@@ -217,22 +217,22 @@ export function createReactiveSystem({
 					flags = ReactiveFlags.None;
 				} else if (!(flags & ReactiveFlags.RecursedCheck)) {
 					/**
-					 * @when Running ❌, Recursed ✅, Dirty ✅
-					 * @then Notify ✅, Propagate ✅
+					 * @when Выполняется ❌, Рекурсия ✅, Грязный ✅
+					 * @then Уведомить ✅, Распространить ✅
 					 */
 					sub.flags = (flags & ~ReactiveFlags.Recursed) | ReactiveFlags.Pending;
 				} else if (!(flags & (ReactiveFlags.Dirty | ReactiveFlags.Pending)) && isValidLink(link, sub)) {
 					/**
-							   * @when Running ✅, Dirty ❌
-							   * @then Notify ❌, Propagate ✅
-							   */
+					 * @when Выполняется ✅, Грязный ❌
+					 * @then Уведомить ❌, Распространить ✅
+					 */
 					sub.flags = flags | ReactiveFlags.Recursed | ReactiveFlags.Pending;
 					flags &= ReactiveFlags.Mutable;
 				} else {
 					/**
-							   * @when Running ✅, Dirty ✅
-							   * @then Notify ❌, Propagate ❌
-							   */
+					 * @when Running ✅, Dirty ✅
+					 * @then Notify ❌, Propagate ❌
+					 */
 					flags = ReactiveFlags.None;
 				}
 
@@ -272,13 +272,12 @@ export function createReactiveSystem({
 	}
 
 	/**
-	 * `startTracking(sub)` prepares to re-write `sub`'s deps while `sub` is
-	 * running. (This does not modify any global state.)
+	 * `startTracking(sub)` подготавливает к перезаписи зависимостей `sub` во время выполнения `sub`.
+	 * (Это не изменяет никакого глобального состояния.)
 	 * 
-	 * In order to collect dynamic dependencies correctly, in theory we should
-	 * clear the current deps when startingTracking, so that the dependencies
-	 * collected during effect/computed re-run are new and reflect the latest
-	 * run only.
+	 * Для корректного сбора динамических зависимостей, теоретически мы должны
+	 * очистить текущие зависимости при начале отслеживания, чтобы зависимости,
+	 * собранные во время повторного выполнения эффекта/вычисления, были новыми и отражали только последний запуск.
 	 * 
 	 * ```ts
 	 * function startTracking(sub: ReactiveNode): void {
@@ -294,11 +293,11 @@ export function createReactiveSystem({
 	 * }
 	 * ```
 	 * 
-	 * But this doesn't perform well. `depsTail = undefined` is a optimization
-	 * method for this problem, during re-run it will compare deps one by one to
-	 * see if it is the same as before. If so, it only needs to update depsTail n
-	 * times. Finally, endTracking will prune deps that are no longer used. (If
-	 * the dependencies do not change, no pruning is required.) 
+	 * Но это работает неэффективно. `depsTail = undefined` - это метод оптимизации
+	 * для этой проблемы, во время повторного выполнения он будет сравнивать зависимости одну за одной,
+	 * чтобы проверить, такие ли они, как раньше. Если да, нужно только обновить depsTail n раз.
+	 * Наконец, endTracking обрежет зависимости, которые больше не используются.
+	 * (Если зависимости не изменяются, обрезка не требуется.)
 	 */
 	function startTracking(sub: ReactiveNode): void {
 		sub.depsTail = undefined;
@@ -306,9 +305,8 @@ export function createReactiveSystem({
 	}
 
 	/**
-	 * `endTracking(sub)` finishes re-writing `sub`'s deps by pruning deps that
-	 * were not linked between the preceding `startTracking(sub)` and this call
-	 * to `endTracking(sub)`.
+	 * `endTracking(sub)` завершает перезапись зависимостей `sub`, обрезая зависимости,
+	 * которые не были связаны между предшествующим `startTracking(sub)` и этим вызовом `endTracking(sub)`.
 	 */
 	function endTracking(sub: ReactiveNode): void {
 		const depsTail = sub.depsTail;
@@ -320,8 +318,8 @@ export function createReactiveSystem({
 	}
 
 	/**
-	 * Check if `sub` is dirty, meaning `sub`'s dependencies changed so sub should
-	 * re-run.
+	 * Проверяет, является ли `sub` загрязненным, то есть зависимости `sub` изменились,
+	 * поэтому sub должен перезапуститься.
 	 * ```ts
 	 * checkDirty(sub.deps!, sub);
 	 * ```
@@ -330,8 +328,8 @@ export function createReactiveSystem({
 		let stack: Stack<Link> | undefined;
 		let checkDepth = 0;
 
-		// This implementation avoids recursion by using an explicit stack.
-		// See README.md for the easier-to-understand recursive version.
+		// Эта реализация избегает рекурсии, используя явный стек.
+		// См. README.md для более понятной рекурсивной версии.
 		top: do {
 			const dep = link.dep;
 			const depFlags = dep.flags;
@@ -397,8 +395,8 @@ export function createReactiveSystem({
 	}
 
 	/**
-	 * Notify the direct subscribers of a node that they are Dirty.
-	 * Only affects subscriber nodes already marked Pending by `propagate`.
+	 * Уведомляет прямых подписчиков узла о том, что они загрязнены (Dirty).
+	 * Влияет только на узлы подписчиков, уже помеченные как Pending функцией `propagate`.
 	 * 
 	 * ```ts
 	 * if (checkDirty(maybeDirty.deps!, maybeDirty)) {
@@ -424,7 +422,7 @@ export function createReactiveSystem({
 	}
 
 	/**
-	 * Check if `checkLink` is a link in `sub.deps`
+	 * Проверяет, является ли `checkLink` связью в `sub.deps`
 	 */
 	function isValidLink(checkLink: Link, sub: ReactiveNode): boolean {
 		const depsTail = sub.depsTail;
