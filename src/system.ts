@@ -35,9 +35,9 @@ export function createReactiveSystem({
 	notify,
 	unwatched,
 }: {
-	update(sub: LinkedList): boolean;
-	notify(sub: LinkedList): void;
-	unwatched(sub: LinkedList): void;
+	update(subList: LinkedList): boolean;
+	notify(subList: LinkedList): void;
+	unwatched(subList: LinkedList): void;
 }) {
 	return {
 		link,
@@ -49,133 +49,133 @@ export function createReactiveSystem({
 		shallowPropagate,
 	};
 
-	function link(dep: LinkedList, sub: LinkedList): void {
-		const prevDep = sub.depTailNode;
-		if (prevDep !== undefined && prevDep.depList === dep) {
+	function link(depList: LinkedList, subList: LinkedList): void {
+		const depTailNode = subList.depTailNode;
+		if (depTailNode !== undefined && depTailNode.depList === depList) {
 			return;
 		}
-		let nextDep: LinkedListNode | undefined = undefined;
-		const recursedCheck = sub.flags & 4 satisfies ReactiveFlags.RecursedCheck;
+		let nextDepNode: LinkedListNode | undefined = undefined;
+		const recursedCheck = subList.flags & 4 satisfies ReactiveFlags.RecursedCheck;
 		if (recursedCheck) {
-			nextDep = prevDep !== undefined ? prevDep.nextDepNode : sub.depHeadNode;
-			if (nextDep !== undefined && nextDep.depList === dep) {
-				sub.depTailNode = nextDep;
+			nextDepNode = depTailNode !== undefined ? depTailNode.nextDepNode : subList.depHeadNode;
+			if (nextDepNode !== undefined && nextDepNode.depList === depList) {
+				subList.depTailNode = nextDepNode;
 				return;
 			}
 		}
-		const prevSub = dep.subTailNode;
+		const subTailNode = depList.subTailNode;
 		if (
-			prevSub !== undefined
-			&& prevSub.subList === sub
-			&& (!recursedCheck || isValidLink(prevSub, sub))
+			subTailNode !== undefined
+			&& subTailNode.subList === subList
+			&& (!recursedCheck || isValidLink(subTailNode, subList))
 		) {
 			return;
 		}
-		const newLink
-			= sub.depTailNode
-			= dep.subTailNode
+		const newNode
+			= subList.depTailNode
+			= depList.subTailNode
 			= {
-				depList: dep,
-				subList: sub,
-				prevDepNode: prevDep,
-				nextDepNode: nextDep,
-				prevSubNode: prevSub,
+				depList,
+				subList,
+				prevDepNode: depTailNode,
+				nextDepNode,
+				prevSubNode: subTailNode,
 				nextSubNode: undefined,
 			};
-		if (nextDep !== undefined) {
-			nextDep.prevDepNode = newLink;
+		if (nextDepNode !== undefined) {
+			nextDepNode.prevDepNode = newNode;
 		}
-		if (prevDep !== undefined) {
-			prevDep.nextDepNode = newLink;
+		if (depTailNode !== undefined) {
+			depTailNode.nextDepNode = newNode;
 		} else {
-			sub.depHeadNode = newLink;
+			subList.depHeadNode = newNode;
 		}
-		if (prevSub !== undefined) {
-			prevSub.nextSubNode = newLink;
+		if (subTailNode !== undefined) {
+			subTailNode.nextSubNode = newNode;
 		} else {
-			dep.subHeadNode = newLink;
+			depList.subHeadNode = newNode;
 		}
 	}
 
 	function unlink(link: LinkedListNode, sub = link.subList): LinkedListNode | undefined {
-		const dep = link.depList;
-		const prevDep = link.prevDepNode;
-		const nextDep = link.nextDepNode;
-		const nextSub = link.nextSubNode;
-		const prevSub = link.prevSubNode;
-		if (nextDep !== undefined) {
-			nextDep.prevDepNode = prevDep;
+		const depList = link.depList;
+		const prevDepNode = link.prevDepNode;
+		const nextDepNode = link.nextDepNode;
+		const nextSubNode = link.nextSubNode;
+		const prevSubNode = link.prevSubNode;
+		if (nextDepNode !== undefined) {
+			nextDepNode.prevDepNode = prevDepNode;
 		} else {
-			sub.depTailNode = prevDep;
+			sub.depTailNode = prevDepNode;
 		}
-		if (prevDep !== undefined) {
-			prevDep.nextDepNode = nextDep;
+		if (prevDepNode !== undefined) {
+			prevDepNode.nextDepNode = nextDepNode;
 		} else {
-			sub.depHeadNode = nextDep;
+			sub.depHeadNode = nextDepNode;
 		}
-		if (nextSub !== undefined) {
-			nextSub.prevSubNode = prevSub;
+		if (nextSubNode !== undefined) {
+			nextSubNode.prevSubNode = prevSubNode;
 		} else {
-			dep.subTailNode = prevSub;
+			depList.subTailNode = prevSubNode;
 		}
-		if (prevSub !== undefined) {
-			prevSub.nextSubNode = nextSub;
-		} else if ((dep.subHeadNode = nextSub) === undefined) {
-			unwatched(dep);
+		if (prevSubNode !== undefined) {
+			prevSubNode.nextSubNode = nextSubNode;
+		} else if ((depList.subHeadNode = nextSubNode) === undefined) {
+			unwatched(depList);
 		}
-		return nextDep;
+		return nextDepNode;
 	}
 
-	function propagate(link: LinkedListNode): void {
-		let next = link.nextSubNode;
+	function propagate(node: LinkedListNode): void {
+		let nextSubNode = node.nextSubNode;
 		let stack: Stack<LinkedListNode | undefined> | undefined;
 
 		top: do {
-			const sub = link.subList;
+			const subList = node.subList;
 
-			let flags = sub.flags;
+			let flags = subList.flags;
 
 			if (flags & 3 as ReactiveFlags.Mutable | ReactiveFlags.Watching) {
 				if (!(flags & 60 as ReactiveFlags.RecursedCheck | ReactiveFlags.Recursed | ReactiveFlags.Dirty | ReactiveFlags.Pending)) {
-					sub.flags = flags | 32 satisfies ReactiveFlags.Pending;
+					subList.flags = flags | 32 satisfies ReactiveFlags.Pending;
 				} else if (!(flags & 12 as ReactiveFlags.RecursedCheck | ReactiveFlags.Recursed)) {
 					flags = 0 satisfies ReactiveFlags.None;
 				} else if (!(flags & 4 satisfies ReactiveFlags.RecursedCheck)) {
-					sub.flags = (flags & ~(8 satisfies ReactiveFlags.Recursed)) | 32 satisfies ReactiveFlags.Pending;
-				} else if (!(flags & 48 as ReactiveFlags.Dirty | ReactiveFlags.Pending) && isValidLink(link, sub)) {
-					sub.flags = flags | 40 as ReactiveFlags.Recursed | ReactiveFlags.Pending;
+					subList.flags = (flags & ~(8 satisfies ReactiveFlags.Recursed)) | 32 satisfies ReactiveFlags.Pending;
+				} else if (!(flags & 48 as ReactiveFlags.Dirty | ReactiveFlags.Pending) && isValidLink(node, subList)) {
+					subList.flags = flags | 40 as ReactiveFlags.Recursed | ReactiveFlags.Pending;
 					flags &= 1 satisfies ReactiveFlags.Mutable;
 				} else {
 					flags = 0 satisfies ReactiveFlags.None;
 				}
 
 				if (flags & 2 satisfies ReactiveFlags.Watching) {
-					notify(sub);
+					notify(subList);
 				}
 
 				if (flags & 1 satisfies ReactiveFlags.Mutable) {
-					const subSubs = sub.subHeadNode;
-					if (subSubs !== undefined) {
-						link = subSubs;
-						if (subSubs.nextSubNode !== undefined) {
-							stack = { value: next, prev: stack };
-							next = link.nextSubNode;
+					const subsSubHeadNode = subList.subHeadNode;
+					if (subsSubHeadNode !== undefined) {
+						node = subsSubHeadNode;
+						if (subsSubHeadNode.nextSubNode !== undefined) {
+							stack = { value: nextSubNode, prev: stack };
+							nextSubNode = node.nextSubNode;
 						}
 						continue;
 					}
 				}
 			}
 
-			if ((link = next!) !== undefined) {
-				next = link.nextSubNode;
+			if ((node = nextSubNode!) !== undefined) {
+				nextSubNode = node.nextSubNode;
 				continue;
 			}
 
 			while (stack !== undefined) {
-				link = stack.value!;
+				node = stack.value!;
 				stack = stack.prev;
-				if (link !== undefined) {
-					next = link.nextSubNode;
+				if (node !== undefined) {
+					nextSubNode = node.nextSubNode;
 					continue top;
 				}
 			}
@@ -184,79 +184,79 @@ export function createReactiveSystem({
 		} while (true);
 	}
 
-	function startTracking(sub: LinkedList): void {
-		sub.depTailNode = undefined;
-		sub.flags = (sub.flags & ~(56 as ReactiveFlags.Recursed | ReactiveFlags.Dirty | ReactiveFlags.Pending)) | 4 satisfies ReactiveFlags.RecursedCheck;
+	function startTracking(subList: LinkedList): void {
+		subList.depTailNode = undefined;
+		subList.flags = (subList.flags & ~(56 as ReactiveFlags.Recursed | ReactiveFlags.Dirty | ReactiveFlags.Pending)) | 4 satisfies ReactiveFlags.RecursedCheck;
 	}
 
-	function endTracking(sub: LinkedList): void {
-		const depsTail = sub.depTailNode;
-		let toRemove = depsTail !== undefined ? depsTail.nextDepNode : sub.depHeadNode;
+	function endTracking(subList: LinkedList): void {
+		const depTailNode = subList.depTailNode;
+		let toRemove = depTailNode !== undefined ? depTailNode.nextDepNode : subList.depHeadNode;
 		while (toRemove !== undefined) {
-			toRemove = unlink(toRemove, sub);
+			toRemove = unlink(toRemove, subList);
 		}
-		sub.flags &= ~(4 satisfies ReactiveFlags.RecursedCheck);
+		subList.flags &= ~(4 satisfies ReactiveFlags.RecursedCheck);
 	}
 
-	function checkDirty(link: LinkedListNode, sub: LinkedList): boolean {
+	function checkDirty(node: LinkedListNode, subList: LinkedList): boolean {
 		let stack: Stack<LinkedListNode> | undefined;
 		let checkDepth = 0;
 
 		top: do {
-			const dep = link.depList;
-			const depFlags = dep.flags;
+			const depList = node.depList;
+			const depFlags = depList.flags;
 
 			let dirty = false;
 
-			if (sub.flags & 16 satisfies ReactiveFlags.Dirty) {
+			if (subList.flags & 16 satisfies ReactiveFlags.Dirty) {
 				dirty = true;
 			} else if ((depFlags & 17 as ReactiveFlags.Mutable | ReactiveFlags.Dirty) === 17 as ReactiveFlags.Mutable | ReactiveFlags.Dirty) {
-				if (update(dep)) {
-					const subs = dep.subHeadNode!;
+				if (update(depList)) {
+					const subs = depList.subHeadNode!;
 					if (subs.nextSubNode !== undefined) {
 						shallowPropagate(subs);
 					}
 					dirty = true;
 				}
 			} else if ((depFlags & 33 as ReactiveFlags.Mutable | ReactiveFlags.Pending) === 33 as ReactiveFlags.Mutable | ReactiveFlags.Pending) {
-				if (link.nextSubNode !== undefined || link.prevSubNode !== undefined) {
-					stack = { value: link, prev: stack };
+				if (node.nextSubNode !== undefined || node.prevSubNode !== undefined) {
+					stack = { value: node, prev: stack };
 				}
-				link = dep.depHeadNode!;
-				sub = dep;
+				node = depList.depHeadNode!;
+				subList = depList;
 				++checkDepth;
 				continue;
 			}
 
-			if (!dirty && link.nextDepNode !== undefined) {
-				link = link.nextDepNode;
+			if (!dirty && node.nextDepNode !== undefined) {
+				node = node.nextDepNode;
 				continue;
 			}
 
 			while (checkDepth) {
 				--checkDepth;
-				const firstSub = sub.subHeadNode!;
+				const firstSub = subList.subHeadNode!;
 				const hasMultipleSubs = firstSub.nextSubNode !== undefined;
 				if (hasMultipleSubs) {
-					link = stack!.value;
+					node = stack!.value;
 					stack = stack!.prev;
 				} else {
-					link = firstSub;
+					node = firstSub;
 				}
 				if (dirty) {
-					if (update(sub)) {
+					if (update(subList)) {
 						if (hasMultipleSubs) {
 							shallowPropagate(firstSub);
 						}
-						sub = link.subList;
+						subList = node.subList;
 						continue;
 					}
 				} else {
-					sub.flags &= ~(32 satisfies ReactiveFlags.Pending);
+					subList.flags &= ~(32 satisfies ReactiveFlags.Pending);
 				}
-				sub = link.subList;
-				if (link.nextDepNode !== undefined) {
-					link = link.nextDepNode;
+				subList = node.subList;
+				if (node.nextDepNode !== undefined) {
+					node = node.nextDepNode;
 					continue top;
 				}
 				dirty = false;
@@ -266,34 +266,34 @@ export function createReactiveSystem({
 		} while (true);
 	}
 
-	function shallowPropagate(link: LinkedListNode): void {
+	function shallowPropagate(node: LinkedListNode): void {
 		do {
-			const sub = link.subList;
-			const nextSub = link.nextSubNode;
-			const subFlags = sub.flags;
-			if ((subFlags & 48 as ReactiveFlags.Pending | ReactiveFlags.Dirty) === 32 satisfies ReactiveFlags.Pending) {
-				sub.flags = subFlags | 16 satisfies ReactiveFlags.Dirty;
-				if (subFlags & 2 satisfies ReactiveFlags.Watching) {
-					notify(sub);
+			const subList = node.subList;
+			const nextSubNode = node.nextSubNode;
+			const subListFlags = subList.flags;
+			if ((subListFlags & 48 as ReactiveFlags.Pending | ReactiveFlags.Dirty) === 32 satisfies ReactiveFlags.Pending) {
+				subList.flags = subListFlags | 16 satisfies ReactiveFlags.Dirty;
+				if (subListFlags & 2 satisfies ReactiveFlags.Watching) {
+					notify(subList);
 				}
 			}
-			link = nextSub!;
-		} while (link !== undefined);
+			node = nextSubNode!;
+		} while (node !== undefined);
 	}
 
-	function isValidLink(checkLink: LinkedListNode, sub: LinkedList): boolean {
-		const depsTail = sub.depTailNode;
-		if (depsTail !== undefined) {
-			let link = sub.depHeadNode!;
+	function isValidLink(checkNode: LinkedListNode, subList: LinkedList): boolean {
+		const depTailNode = subList.depTailNode;
+		if (depTailNode !== undefined) {
+			let depHeadNode = subList.depHeadNode!;
 			do {
-				if (link === checkLink) {
+				if (depHeadNode === checkNode) {
 					return true;
 				}
-				if (link === depsTail) {
+				if (depHeadNode === depTailNode) {
 					break;
 				}
-				link = link.nextDepNode!;
-			} while (link !== undefined);
+				depHeadNode = depHeadNode.nextDepNode!;
+			} while (depHeadNode !== undefined);
 		}
 		return false;
 	}
