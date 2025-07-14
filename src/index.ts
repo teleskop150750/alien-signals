@@ -1,28 +1,28 @@
 export * from './system.js';
 
-import { createReactiveSystem, type ReactiveNode, type ReactiveFlags } from './system.js';
+import { createReactiveSystem, type LinkedList, type ReactiveFlags } from './system.js';
 
 const enum EffectFlags {
 	Queued = 1 << 6,
 }
 
-interface EffectScope extends ReactiveNode { }
+interface EffectScope extends LinkedList { }
 
-interface Effect extends ReactiveNode {
+interface Effect extends LinkedList {
 	fn(): void;
 }
 
-interface Computed<T = any> extends ReactiveNode {
+interface Computed<T = any> extends LinkedList {
 	value: T | undefined;
 	getter: (previousValue?: T) => T;
 }
 
-interface Signal<T = any> extends ReactiveNode {
+interface Signal<T = any> extends LinkedList {
 	previousValue: T;
 	value: T;
 }
 
-const pauseStack: (ReactiveNode | undefined)[] = [];
+const pauseStack: (LinkedList | undefined)[] = [];
 const queuedEffects: (Effect | EffectScope | undefined)[] = [];
 const {
 	link,
@@ -43,7 +43,7 @@ const {
 	notify,
 	unwatched(node: Signal | Computed | Effect | EffectScope) {
 		if ('getter' in node) {
-			let toRemove = node.deps;
+			let toRemove = node.depHeadNode;
 			if (toRemove !== undefined) {
 				node.flags = 17 as ReactiveFlags.Mutable | ReactiveFlags.Dirty;
 				do {
@@ -60,14 +60,14 @@ export let batchDepth = 0;
 
 let notifyIndex = 0;
 let queuedEffectsLength = 0;
-let activeSub: ReactiveNode | undefined;
+let activeSub: LinkedList | undefined;
 let activeScope: EffectScope | undefined;
 
-export function getCurrentSub(): ReactiveNode | undefined {
+export function getCurrentSub(): LinkedList | undefined {
 	return activeSub;
 }
 
-export function setCurrentSub(sub: ReactiveNode | undefined) {
+export function setCurrentSub(sub: LinkedList | undefined) {
 	const prevSub = activeSub;
 	activeSub = sub;
 	return prevSub;
@@ -122,8 +122,8 @@ export function signal<T>(initialValue?: T): {
 	return signalOper.bind({
 		previousValue: initialValue,
 		value: initialValue,
-		subs: undefined,
-		subsTail: undefined,
+		subHeadNode: undefined,
+		subTailNode: undefined,
 		flags: 1 satisfies ReactiveFlags.Mutable,
 	}) as () => T | undefined;
 }
@@ -131,10 +131,10 @@ export function signal<T>(initialValue?: T): {
 export function computed<T>(getter: (previousValue?: T) => T): () => T {
 	return computedOper.bind({
 		value: undefined,
-		subs: undefined,
-		subsTail: undefined,
-		deps: undefined,
-		depsTail: undefined,
+		subHeadNode: undefined,
+		subTailNode: undefined,
+		depHeadNode: undefined,
+		depTailNode: undefined,
 		flags: 17 as ReactiveFlags.Mutable | ReactiveFlags.Dirty,
 		getter: getter as (previousValue?: unknown) => unknown,
 	}) as () => T;
@@ -143,10 +143,10 @@ export function computed<T>(getter: (previousValue?: T) => T): () => T {
 export function effect(fn: () => void): () => void {
 	const e: Effect = {
 		fn,
-		subs: undefined,
-		subsTail: undefined,
-		deps: undefined,
-		depsTail: undefined,
+		subHeadNode: undefined,
+		subTailNode: undefined,
+		depHeadNode: undefined,
+		depTailNode: undefined,
 		flags: 2 satisfies ReactiveFlags.Watching,
 	};
 	if (activeSub !== undefined) {
@@ -165,10 +165,10 @@ export function effect(fn: () => void): () => void {
 
 export function effectScope(fn: () => void): () => void {
 	const e: EffectScope = {
-		deps: undefined,
-		depsTail: undefined,
-		subs: undefined,
-		subsTail: undefined,
+		depHeadNode: undefined,
+		depTailNode: undefined,
+		subHeadNode: undefined,
+		subTailNode: undefined,
 		flags: 0 satisfies ReactiveFlags.None,
 	};
 	if (activeScope !== undefined) {
@@ -206,9 +206,9 @@ function notify(e: Effect | EffectScope) {
 	const flags = e.flags;
 	if (!(flags & EffectFlags.Queued)) {
 		e.flags = flags | EffectFlags.Queued;
-		const subs = e.subs;
+		const subs = e.subHeadNode;
 		if (subs !== undefined) {
-			notify(subs.sub as Effect | EffectScope);
+			notify(subs.subList as Effect | EffectScope);
 		} else {
 			queuedEffects[queuedEffectsLength++] = e;
 		}
@@ -218,7 +218,7 @@ function notify(e: Effect | EffectScope) {
 function run(e: Effect | EffectScope, flags: ReactiveFlags): void {
 	if (
 		flags & 16 satisfies ReactiveFlags.Dirty
-		|| (flags & 32 satisfies ReactiveFlags.Pending && checkDirty(e.deps!, e))
+		|| (flags & 32 satisfies ReactiveFlags.Pending && checkDirty(e.depHeadNode!, e))
 	) {
 		const prev = setCurrentSub(e);
 		startTracking(e);
@@ -232,14 +232,14 @@ function run(e: Effect | EffectScope, flags: ReactiveFlags): void {
 	} else if (flags & 32 satisfies ReactiveFlags.Pending) {
 		e.flags = flags & ~(32 satisfies ReactiveFlags.Pending);
 	}
-	let link = e.deps;
+	let link = e.depHeadNode;
 	while (link !== undefined) {
-		const dep = link.dep;
+		const dep = link.depList;
 		const depFlags = dep.flags;
 		if (depFlags & EffectFlags.Queued) {
 			run(dep, dep.flags = depFlags & ~EffectFlags.Queued);
 		}
-		link = link.nextDep;
+		link = link.nextDepNode;
 	}
 }
 
@@ -257,10 +257,10 @@ function computedOper<T>(this: Computed<T>): T {
 	const flags = this.flags;
 	if (
 		flags & 16 satisfies ReactiveFlags.Dirty
-		|| (flags & 32 satisfies ReactiveFlags.Pending && checkDirty(this.deps!, this))
+		|| (flags & 32 satisfies ReactiveFlags.Pending && checkDirty(this.depHeadNode!, this))
 	) {
 		if (updateComputed(this)) {
-			const subs = this.subs;
+			const subs = this.subHeadNode;
 			if (subs !== undefined) {
 				shallowPropagate(subs);
 			}
@@ -281,7 +281,7 @@ function signalOper<T>(this: Signal<T>, ...value: [T]): T | void {
 		const newValue = value[0];
 		if (this.value !== (this.value = newValue)) {
 			this.flags = 17 as ReactiveFlags.Mutable | ReactiveFlags.Dirty;
-			const subs = this.subs;
+			const subs = this.subHeadNode;
 			if (subs !== undefined) {
 				propagate(subs);
 				if (!batchDepth) {
@@ -293,7 +293,7 @@ function signalOper<T>(this: Signal<T>, ...value: [T]): T | void {
 		const value = this.value;
 		if (this.flags & 16 satisfies ReactiveFlags.Dirty) {
 			if (updateSignal(this, value)) {
-				const subs = this.subs;
+				const subs = this.subHeadNode;
 				if (subs !== undefined) {
 					shallowPropagate(subs);
 				}
@@ -307,11 +307,11 @@ function signalOper<T>(this: Signal<T>, ...value: [T]): T | void {
 }
 
 function effectOper(this: Effect | EffectScope): void {
-	let dep = this.deps;
+	let dep = this.depHeadNode;
 	while (dep !== undefined) {
 		dep = unlink(dep, this);
 	}
-	const sub = this.subs;
+	const sub = this.subHeadNode;
 	if (sub !== undefined) {
 		unlink(sub);
 	}
