@@ -217,14 +217,14 @@ export function createReactiveSystem({
 					flags = ReactiveFlags.None;
 				} else if (!(flags & ReactiveFlags.RecursedCheck)) {
 					/**
-					 * @when Выполняется ❌, Рекурсия ✅, Грязный ✅
-					 * @then Уведомить ✅, Распространить ✅
+					 * @when Running ❌, Recursed ✅, Dirty ✅
+					 * @then Notify ✅, Propagate ✅
 					 */
 					sub.flags = (flags & ~ReactiveFlags.Recursed) | ReactiveFlags.Pending;
 				} else if (!(flags & (ReactiveFlags.Dirty | ReactiveFlags.Pending)) && isValidLink(link, sub)) {
 					/**
-					 * @when Выполняется ✅, Грязный ❌
-					 * @then Уведомить ❌, Распространить ✅
+					 * @when Running ✅, Dirty ❌
+					 * @then Notify ❌, Propagate ✅
 					 */
 					sub.flags = flags | ReactiveFlags.Recursed | ReactiveFlags.Pending;
 					flags &= ReactiveFlags.Mutable;
