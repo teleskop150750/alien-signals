@@ -363,18 +363,18 @@ export function createReactiveSystem({
 			// Возвращаемся по стеку проверки
 			while (checkDepth) {
 				--checkDepth;
-				const firstSub = subList.subHeadNode!;
-				const hasMultipleSubs = firstSub.nextSubNode !== undefined;
+				const subHeadNode = subList.subHeadNode!;
+				const hasMultipleSubs = subHeadNode.nextSubNode !== undefined;
 				if (hasMultipleSubs) {
 					node = stack!.value;
 					stack = stack!.prev;
 				} else {
-					node = firstSub;
+					node = subHeadNode;
 				}
 				if (dirty) {
 					if (update(subList)) {
 						if (hasMultipleSubs) {
-							shallowPropagate(firstSub);
+							shallowPropagate(subHeadNode);
 						}
 						subList = node.subList;
 						continue;
