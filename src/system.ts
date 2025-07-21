@@ -117,6 +117,10 @@ export function createReactiveSystem({
 			return;
 		}
 		let nextDepNode: LinkedListNode | undefined = undefined;
+		// Проверяем флаг RecursedCheck через побитовое И
+		// Побитовая операция: subList.flags & 4
+		// 4 = 0b000100 = RecursedCheck
+		// Результат: true если установлен бит RecursedCheck
 		const recursedCheck = subList.flags & 4 satisfies ReactiveFlags.RecursedCheck;
 		if (recursedCheck) {
 			// При проверке рекурсии ищем следующий узел зависимости
@@ -226,27 +230,64 @@ export function createReactiveSystem({
 			let flags = subList.flags;
 
 			// Проверяем, нужно ли обрабатывать этот узел
+			// Побитовая операция: flags & 3
+			// 3 = 0b000011 = Mutable(1) | Watching(2)
+			// Результат: true если установлен хотя бы один из битов Mutable или Watching
 			if (flags & 3 as ReactiveFlags.Mutable | ReactiveFlags.Watching) {
-				// Логика обработки флагов состояния
+				// Сценарий 1: Узел чистый и готов к обработке
+				// Побитовая операция: !(flags & 60)
+				// 60 = 0b111100 = RecursedCheck(4) | Recursed(8) | Dirty(16) | Pending(32)
+				// Результат: true если НИ ОДИН из этих флагов не установлен
 				if (!(flags & 60 as ReactiveFlags.RecursedCheck | ReactiveFlags.Recursed | ReactiveFlags.Dirty | ReactiveFlags.Pending)) {
+					// Устанавливаем флаг Pending через побитовое ИЛИ
+					// flags | 32: добавляем бит Pending(32 = 0b100000) к существующим флагам
 					subList.flags = flags | 32 satisfies ReactiveFlags.Pending;
+					// Сценарий 2: Узел не выполняется и не в рекурсии
+					// Побитовая операция: !(flags & 12)
+					// 12 = 0b001100 = RecursedCheck(4) | Recursed(8)
+					// Результат: true если НИ ОДИН из флагов рекурсии не установлен
 				} else if (!(flags & 12 as ReactiveFlags.RecursedCheck | ReactiveFlags.Recursed)) {
+					// Сбрасываем все флаги (состояние None = 0)
 					flags = 0 satisfies ReactiveFlags.None;
+					// Сценарий 3: Узел в рекурсии, но не выполняется проверка рекурсии
+					// Побитовая операция: !(flags & 4)
+					// 4 = 0b000100 = RecursedCheck
+					// Результат: true если флаг RecursedCheck НЕ установлен
 				} else if (!(flags & 4 satisfies ReactiveFlags.RecursedCheck)) {
+					// Сложная побитовая операция: (flags & ~8) | 32
+					// ~8 = ~0b001000 = 0b...11110111 (инверсия бита Recursed)
+					// flags & ~8: сбрасываем бит Recursed, оставляя остальные
+					// | 32: добавляем бит Pending
 					subList.flags = (flags & ~(8 satisfies ReactiveFlags.Recursed)) | 32 satisfies ReactiveFlags.Pending;
+					// Сценарий 4: Узел выполняется, но не грязный и не ожидает
+					// Побитовая операция: !(flags & 48)
+					// 48 = 0b110000 = Dirty(16) | Pending(32)
+					// Результат: true если НИ ОДИН из флагов Dirty или Pending не установлен
 				} else if (!(flags & 48 as ReactiveFlags.Dirty | ReactiveFlags.Pending) && isValidLink(node, subList)) {
+					// Устанавливаем флаги Recursed и Pending через побитовое ИЛИ
+					// 40 = 0b101000 = Recursed(8) | Pending(32)
+					// flags | 40: добавляем оба флага к существующим
 					subList.flags = flags | 40 as ReactiveFlags.Recursed | ReactiveFlags.Pending;
+					// Оставляем только флаг Mutable через побитовое И
+					// flags & 1: сохраняем только бит Mutable(1 = 0b000001), сбрасывая остальные
 					flags &= 1 satisfies ReactiveFlags.Mutable;
 				} else {
+					// Во всех остальных случаях сбрасываем все флаги
 					flags = 0 satisfies ReactiveFlags.None;
 				}
 
-				// Уведомляем наблюдателей
+				// Уведомляем наблюдателей если установлен флаг Watching
+				// Побитовая операция: flags & 2
+				// 2 = 0b000010 = Watching
+				// Результат: true если установлен бит Watching
 				if (flags & 2 satisfies ReactiveFlags.Watching) {
 					notify(subList);
 				}
 
 				// Рекурсивно обрабатываем подписчиков мутабельных узлов
+				// Побитовая операция: flags & 1
+				// 1 = 0b000001 = Mutable
+				// Результат: true если установлен бит Mutable
 				if (flags & 1 satisfies ReactiveFlags.Mutable) {
 					const subsSubHeadNode = subList.subHeadNode;
 					if (subsSubHeadNode !== undefined) {
@@ -291,6 +332,14 @@ export function createReactiveSystem({
 	 */
 	function startTracking(subList: LinkedList): void {
 		subList.depTailNode = undefined;
+		// Сложная побитовая операция для обновления флагов:
+		// 1. (subList.flags & ~56): сбрасываем флаги Recursed, Dirty, Pending
+		//    56 = 0b111000 = Recursed(8) | Dirty(16) | Pending(32)
+		//    ~56 = 0b...11000111 (инверсия маски)
+		//    subList.flags & ~56: сохраняем все флаги кроме Recursed, Dirty, Pending
+		// 2. | 4: добавляем флаг RecursedCheck
+		//    4 = 0b000100 = RecursedCheck
+		// Итог: сбрасываем состояние выполнения и устанавливаем режим проверки рекурсии
 		subList.flags = (subList.flags & ~(56 as ReactiveFlags.Recursed | ReactiveFlags.Dirty | ReactiveFlags.Pending)) | 4 satisfies ReactiveFlags.RecursedCheck;
 	}
 
@@ -309,6 +358,10 @@ export function createReactiveSystem({
 		while (toRemove !== undefined) {
 			toRemove = unlink(toRemove, subList);
 		}
+		// Сбрасываем флаг RecursedCheck через побитовое И с инверсией
+		// Побитовая операция: subList.flags & ~4
+		// ~4 = ~0b000100 = 0b...11111011 (инверсия бита RecursedCheck)
+		// Результат: сохраняем все флаги кроме RecursedCheck
 		subList.flags &= ~(4 satisfies ReactiveFlags.RecursedCheck);
 	}
 
@@ -332,8 +385,16 @@ export function createReactiveSystem({
 			let dirty = false;
 
 			// Определяем, является ли узел "грязным"
+			// Проверяем флаг Dirty через побитовое И
+			// Побитовая операция: subList.flags & 16
+			// 16 = 0b010000 = Dirty
+			// Результат: true если установлен бит Dirty
 			if (subList.flags & 16 satisfies ReactiveFlags.Dirty) {
 				dirty = true;
+				// Проверяем комбинацию флагов Mutable и Dirty
+				// Побитовая операция: (depFlags & 17) === 17
+				// 17 = 0b010001 = Mutable(1) | Dirty(16)
+				// Результат: true если установлены ОБА флага одновременно
 			} else if ((depFlags & 17 as ReactiveFlags.Mutable | ReactiveFlags.Dirty) === 17 as ReactiveFlags.Mutable | ReactiveFlags.Dirty) {
 				// Обновляем мутабельный "грязный" узел
 				if (update(depList)) {
@@ -343,6 +404,10 @@ export function createReactiveSystem({
 					}
 					dirty = true;
 				}
+				// Проверяем комбинацию флагов Mutable и Pending
+				// Побитовая операция: (depFlags & 33) === 33
+				// 33 = 0b100001 = Mutable(1) | Pending(32)
+				// Результат: true если установлены ОБА флага одновременно
 			} else if ((depFlags & 33 as ReactiveFlags.Mutable | ReactiveFlags.Pending) === 33 as ReactiveFlags.Mutable | ReactiveFlags.Pending) {
 				// Рекурсивно проверяем зависимости
 				if (node.nextSubNode !== undefined || node.prevSubNode !== undefined) {
@@ -380,7 +445,10 @@ export function createReactiveSystem({
 						continue;
 					}
 				} else {
-					// Сбрасываем флаг ожидания если узел не грязный
+					// Сбрасываем флаг Pending если узел не грязный
+					// Побитовая операция: subList.flags & ~32
+					// ~32 = ~0b100000 = 0b...11011111 (инверсия бита Pending)
+					// Результат: сохраняем все флаги кроме Pending
 					subList.flags &= ~(32 satisfies ReactiveFlags.Pending);
 				}
 				subList = node.subList;
@@ -408,9 +476,19 @@ export function createReactiveSystem({
 			const subList = node.subList;
 			const nextSubNode = node.nextSubNode;
 			const subListFlags = subList.flags;
-			// Помечаем как "грязный" если узел ожидает обработки
+			// Проверяем, что узел находится в состоянии Pending, но НЕ Dirty
+			// Побитовая операция: (subListFlags & 48) === 32
+			// 48 = 0b110000 = Pending(32) | Dirty(16)
+			// 32 = 0b100000 = Pending
+			// Результат: true если установлен ТОЛЬКО флаг Pending (без Dirty)
 			if ((subListFlags & 48 as ReactiveFlags.Pending | ReactiveFlags.Dirty) === 32 satisfies ReactiveFlags.Pending) {
+				// Помечаем узел как "грязный" через побитовое ИЛИ
+				// subListFlags | 16: добавляем бит Dirty(16 = 0b010000) к существующим флагам
 				subList.flags = subListFlags | 16 satisfies ReactiveFlags.Dirty;
+				// Проверяем флаг Watching и уведомляем если нужно
+				// Побитовая операция: subListFlags & 2
+				// 2 = 0b000010 = Watching
+				// Результат: true если установлен бит Watching
 				if (subListFlags & 2 satisfies ReactiveFlags.Watching) {
 					notify(subList);
 				}
